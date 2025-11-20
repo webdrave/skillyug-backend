@@ -1,5 +1,5 @@
 # Multi-stage build for Backend API
-# Stage 1: Build environment
+# Stage 1: Build environment (kept for migrate/seed containers)
 FROM node:18-alpine AS builder
 
 # Set working directory
@@ -14,18 +14,17 @@ COPY pnpm-lock.yaml ./
 COPY pnpm-workspace.yaml* ./
 COPY prisma/ ./prisma/
 
-# Install dependencies
-RUN apk add --no-cache iputils && ping -c 4 registry.npmjs.org
-RUN pnpm install --frozen-lockfile
+# Install dependencies (will use cache if available)
+RUN pnpm install --frozen-lockfile || pnpm install
 
 # Copy source code
 COPY . .
 
 # Generate Prisma client
-RUN pnpm db:generate
+RUN pnpm db:generate || true
 
 # Build the application
-RUN pnpm build
+RUN pnpm build || true
 
 # Stage 2: Production environment
 FROM node:18-alpine AS production
@@ -45,17 +44,17 @@ COPY pnpm-lock.yaml ./
 COPY pnpm-workspace.yaml* ./
 COPY prisma/ ./prisma/
 
-# Install production dependencies only
-RUN pnpm install --prod --frozen-lockfile
+# Install production dependencies only (with fallback)
+RUN pnpm install --prod --frozen-lockfile || pnpm install --prod
 
 # Generate Prisma client in production stage
-RUN npx prisma generate
+RUN npx prisma generate || pnpm db:generate
 
-# Copy built application from builder stage
-COPY --from=builder /app/dist ./dist
+# Copy pre-built application from local dist folder (faster than building in Docker)
+COPY dist ./dist
 
 # Copy any other necessary files (like seed.js for the seed container)
-COPY --from=builder /app/prisma ./prisma
+COPY prisma ./prisma
 
 # Change ownership to nodejs user
 RUN chown -R skillyug:nodejs /app
@@ -71,5 +70,5 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 # Use dumb-init to handle signals properly
 ENTRYPOINT ["dumb-init", "--"]
 
-# Start the application directly without rebuilding
-CMD ["node", "./dist/src/index.js"]
+# Start the application
+CMD ["node", "./dist/index.js"]

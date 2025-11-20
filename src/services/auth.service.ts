@@ -2,7 +2,7 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { userRepository } from '../repositories/user.repository';
-import { emailService } from './email-client.service';
+import { emailService } from './email.service';
 import { AuthenticationError, BusinessLogicError, ValidationError, NotFoundError, DuplicateError } from '../utils/errors';
 import { UserType } from '@prisma/client';
 import { UserJwtPayload } from '../types/user';

@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { instance } from '../utils/razorpayInstance';
 import { courseRepository } from '../repositories/course.repository';
 import { userRepository } from '../repositories/user.repository';
-import { emailService } from './email-client.service';
+import { emailService } from './email.service';
 import {
   NotFoundError,
   ValidationError,

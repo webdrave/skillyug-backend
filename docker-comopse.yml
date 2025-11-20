@@ -1,0 +1,226 @@
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: skillyug-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-skillyug}
+      POSTGRES_USER: ${POSTGRES_USER:-skillyug_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-skillyug_password}
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./Backend/prisma/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - skillyug-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-skillyug_user} -d ${POSTGRES_DB:-skillyug}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    labels:
+      - "traefik.enable=false"
+
+  # Redis for Caching and Sessions
+  redis:
+    image: redis:7.2-alpine
+    container_name: skillyug-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - skillyug-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    labels:
+      - "traefik.enable=false"
+
+
+
+  # Backend API Service
+  backend:
+    build:
+      context: ./Backend
+      dockerfile: ${DOCKERFILE:-Dockerfile}
+      target: ${BUILD_TARGET:-production}
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    container_name: skillyug-backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 5000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-skillyug_user}:${POSTGRES_PASSWORD:-skillyug_password}@postgres:5432/${POSTGRES_DB:-skillyug}?schema=public
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET}
+      AUTH_SECRET: ${AUTH_SECRET}
+      RAZORPAY_KEY: ${RAZORPAY_KEY}
+      RAZORPAY_SECRET: ${RAZORPAY_SECRET}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      EMAIL_HOST: ${EMAIL_HOST}
+      EMAIL_PORT: ${EMAIL_PORT:-587}
+      EMAIL_USER: ${EMAIL_USER}
+      EMAIL_PASS: ${EMAIL_PASS}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      S3_BUCKET_NAME: ${S3_BUCKET_NAME}
+    ports:
+      - "5000:5000"
+      - "9229:9229"
+    volumes:
+      - ./Backend/uploads:/app/uploads
+    networks:
+      - skillyug-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5000/api/test"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.backend.rule=Host(`api.skillyug.local`)"
+      - "traefik.http.routers.backend.entrypoints=web"
+      - "traefik.http.services.backend.loadbalancer.server.port=5000"
+
+  # Frontend Next.js Service
+  frontend:
+    build:
+      context: ./frontend-nextjs
+      dockerfile: ${DOCKERFILE:-Dockerfile}
+      target: ${FRONTEND_TARGET:-runner}
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    container_name: skillyug-frontend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5000/api}
+      NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL:-http://localhost:5000}
+      NEXT_PUBLIC_RAZORPAY_KEY: ${NEXT_PUBLIC_RAZORPAY_KEY}
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-skillyug_user}:${POSTGRES_PASSWORD:-skillyug_password}@postgres:5432/${POSTGRES_DB:-skillyug}?schema=public
+      RECOMMENDATION_ENGINE_URL: http://recommendation-engine:8003
+    ports:
+      - "3000:3000"
+    networks:
+      - skillyug-network
+    depends_on:
+      - backend
+      - postgres
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend.rule=Host(`skillyug.local`)"
+      - "traefik.http.routers.frontend.entrypoints=web"
+      - "traefik.http.services.frontend.loadbalancer.server.port=3000"
+
+  # Traefik Reverse Proxy
+  traefik:
+    image: traefik:v3.0
+    container_name: skillyug-traefik
+    restart: unless-stopped
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.myresolver.acme.tlschallenge=true"
+      - "--certificatesresolvers.myresolver.acme.email=admin@skillyug.com"
+      - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
+      - "--log.level=INFO"
+      - "--accesslog=true"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"  # Traefik dashboard
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik_letsencrypt:/letsencrypt
+    networks:
+      - skillyug-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.rule=Host(`traefik.skillyug.local`)"
+      - "traefik.http.routers.traefik.entrypoints=web"
+
+
+
+  # Database Migration Service (one-time)
+  migrate:
+    build:
+      context: ./Backend
+      dockerfile: Dockerfile
+      target: builder
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    container_name: skillyug-migrate
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-skillyug_user}:${POSTGRES_PASSWORD:-skillyug_password}@postgres:5432/${POSTGRES_DB:-skillyug}?schema=public
+    networks:
+      - skillyug-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["pnpm", "db:migrate"]
+    restart: "no"
+
+  # Database Seeding Service (one-time)
+  seed:
+    build:
+      context: ./Backend
+      dockerfile: Dockerfile
+      target: builder
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    container_name: skillyug-seed
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-skillyug_user}:${POSTGRES_PASSWORD:-skillyug_password}@postgres:5432/${POSTGRES_DB:-skillyug}?schema=public
+    networks:
+      - skillyug-network
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    command: ["pnpm", "db:seed"]
+    restart: "no"
+
+# Named volumes for persistent data
+volumes:
+  postgres_data:
+    name: skillyug_postgres_data
+  redis_data:
+    name: skillyug_redis_data
+  traefik_letsencrypt:
+    name: skillyug_traefik_letsencrypt
+
+# Custom network
+networks:
+  skillyug-network:
+    name: skillyug-network
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

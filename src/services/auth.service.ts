@@ -56,10 +56,14 @@ export class AuthService {
     const existingUser = await userRepository.findByEmail(userData.email);
     if (existingUser) throw new DuplicateError('User', 'email');
 
-    const hashedPassword = await this.hashPassword(userData.password);
+    // Generate OTP and hash password in parallel
     const otp = this.generateOtp();
-    const hashedOtp = await bcrypt.hash(otp, 10);
     const otpExpires = new Date(Date.now() + this.OTP_EXPIRY_MINUTES * 60 * 1000);
+    
+    const [hashedPassword, hashedOtp] = await Promise.all([
+      this.hashPassword(userData.password),
+      bcrypt.hash(otp, 10),
+    ]);
 
     if (process.env.NODE_ENV === 'development') {
       console.log(`🔐 OTP for ${userData.email}: ${otp}`);
@@ -73,12 +77,12 @@ export class AuthService {
       isVerified: false,
     });
 
-    try {
-      await emailService.sendOtpEmail(userData.email, otp);
-    } catch (error) {
-      console.error('Email send failed:', error);
-      throw new BusinessLogicError('Failed to send verification email');
-    }
+    // Send email asynchronously (non-blocking on error)
+    emailService.sendOtpEmail(userData.email, otp)
+      .catch(error => {
+        console.error('Email send failed:', error);
+        // Don't throw - user is created, they can resend OTP
+      });
 
     return { user, message: 'Registration successful. Check your email.' };
   }
@@ -107,21 +111,22 @@ export class AuthService {
     if (user.isVerified) return { message: 'Email already verified' };
 
     const otp = this.generateOtp();
-    const hashedOtp = await bcrypt.hash(otp, 10);
     const otpExpires = new Date(Date.now() + this.OTP_EXPIRY_MINUTES * 60 * 1000);
 
     if (process.env.NODE_ENV === 'development') {
       console.log(`🔐 OTP for ${email}: ${otp}`);
     }
 
-    await userRepository.setOtp(email, hashedOtp, otpExpires);
-
-    try {
-      await emailService.sendOtpEmail(email, otp);
-    } catch (error) {
-      console.error('Email send failed:', error);
-      throw new BusinessLogicError('Failed to send verification email');
-    }
+    // Hash OTP and update DB in parallel with email sending
+    const hashedOtp = await bcrypt.hash(otp, 10);
+    
+    await Promise.all([
+      userRepository.setOtp(email, hashedOtp, otpExpires),
+      emailService.sendOtpEmail(email, otp).catch(error => {
+        console.error('Email send failed:', error);
+        throw new BusinessLogicError('Failed to send verification email');
+      }),
+    ]);
 
     return { message: 'New OTP sent' };
   }
@@ -169,23 +174,24 @@ export class AuthService {
       return { verified: true, token, user: safeUser, message: 'Login successful' };
     }
 
-    // User not verified - send OTP
+    // User not verified - generate and send OTP
     const newOtp = this.generateOtp();
-    const hashedOtp = await bcrypt.hash(newOtp, 10);
     const otpExpires = new Date(Date.now() + this.OTP_EXPIRY_MINUTES * 60 * 1000);
 
     if (process.env.NODE_ENV === 'development') {
       console.log(`🔐 OTP for ${email}: ${newOtp}`);
     }
 
-    await userRepository.setOtp(email, hashedOtp, otpExpires);
-
-    try {
-      await emailService.sendOtpEmail(email, newOtp);
-    } catch (error) {
-      console.error('Email send failed:', error);
-      throw new BusinessLogicError('Failed to send verification email');
-    }
+    const hashedOtp = await bcrypt.hash(newOtp, 10);
+    
+    // Update DB and send email in parallel
+    await Promise.all([
+      userRepository.setOtp(email, hashedOtp, otpExpires),
+      emailService.sendOtpEmail(email, newOtp).catch(error => {
+        console.error('Email send failed:', error);
+        throw new BusinessLogicError('Failed to send verification email');
+      }),
+    ]);
 
     return {
       needsVerification: true,
@@ -199,22 +205,23 @@ export class AuthService {
   async forgotPassword(email: string) {
     const user = await userRepository.findByEmail(email);
     if (!user) {
+      // Return same message to prevent email enumeration
       return { message: 'If account exists, reset link has been sent.' };
     }
 
     const resetToken = crypto.randomBytes(32).toString('hex');
     const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex');
     const resetTokenExpires = new Date(Date.now() + this.RESET_TOKEN_EXPIRY_MINUTES * 60 * 1000);
+    const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
 
-    await userRepository.setPasswordResetToken(email, hashedToken, resetTokenExpires);
-
-    try {
-      const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
-      await emailService.sendPasswordResetEmail(email, resetUrl);
-    } catch (error) {
-      console.error('Email send failed:', error);
-      throw new BusinessLogicError('Failed to send reset email');
-    }
+    // Update DB and send email in parallel
+    await Promise.all([
+      userRepository.setPasswordResetToken(email, hashedToken, resetTokenExpires),
+      emailService.sendPasswordResetEmail(email, resetUrl).catch(error => {
+        console.error('Email send failed:', error);
+        throw new BusinessLogicError('Failed to send reset email');
+      }),
+    ]);
 
     return { message: 'Password reset link sent.' };
   }
@@ -247,11 +254,9 @@ export class AuthService {
     const hashedPassword = await this.hashPassword(newPassword);
     await userRepository.updatePassword(userId, hashedPassword);
 
-    try {
-      await emailService.sendPasswordChangeConfirmation(user.email!);
-    } catch (error) {
-      console.error('Email send failed:', error);
-    }
+    // Send confirmation email asynchronously (non-blocking)
+    emailService.sendPasswordChangeConfirmation(user.email!)
+      .catch(error => console.error('Email send failed:', error));
 
     return { message: 'Password updated successfully' };
   }

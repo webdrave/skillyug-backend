@@ -103,6 +103,27 @@ export class EmailService {
   }
 
   /**
+   * Send mentor invitation email
+   */
+  async sendMentorInvitationEmail(
+    email: string,
+    inviteLink: string,
+    invitedBy: string
+  ): Promise<void> {
+    try {
+      await sendEmail({
+        email,
+        subject: 'You\'re Invited to Join Skillyug as a Mentor!',
+        text: `${invitedBy} has invited you to join Skillyug as a mentor. Click this link to complete your profile: ${inviteLink}\n\nThis invitation will expire in 48 hours.`,
+        html: this.getMentorInvitationTemplate(inviteLink, invitedBy),
+      });
+    } catch (error) {
+      console.error('Failed to send mentor invitation email:', error);
+      throw new ExternalServiceError('Email service', 'Failed to send mentor invitation email');
+    }
+  }
+
+  /**
    * OTP email template
    */
   private getOtpEmailTemplate(otp: string): string {
@@ -348,6 +369,78 @@ export class EmailService {
           </div>
           
           <div class="footer">
+            <p>&copy; 2024 Skillyug. All rights reserved.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+  }
+
+  /**
+   * Mentor invitation email template
+   */
+  private getMentorInvitationTemplate(inviteLink: string, invitedBy: string): string {
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Mentor Invitation</title>
+        <style>
+          body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 0; background-color: #f5f5f5; }
+          .container { max-width: 600px; margin: 0 auto; background-color: white; padding: 40px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+          .header { text-align: center; margin-bottom: 30px; }
+          .logo { font-size: 32px; font-weight: bold; color: #2563eb; margin-bottom: 10px; }
+          .message { font-size: 16px; line-height: 1.6; color: #374151; text-align: center; }
+          .invitation-box { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 8px; margin: 30px 0; color: white; }
+          .invitation-box h3 { margin-top: 0; font-size: 24px; }
+          .button { display: inline-block; padding: 15px 30px; background-color: white; color: #2563eb; text-decoration: none; border-radius: 6px; font-weight: bold; margin: 20px 0; }
+          .button:hover { background-color: #f8fafc; }
+          .warning { color: #ef4444; margin-top: 20px; font-size: 14px; }
+          .features { text-align: left; margin: 20px 0; }
+          .features li { margin: 10px 0; }
+          .footer { margin-top: 40px; text-align: center; font-size: 12px; color: #6b7280; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <div class="logo">Skillyug</div>
+            <h2>🎉 You're Invited!</h2>
+          </div>
+          
+          <div class="message">
+            <p><strong>${invitedBy}</strong> has invited you to join Skillyug as a mentor!</p>
+          </div>
+
+          <div class="invitation-box">
+            <h3>Share Your Knowledge</h3>
+            <p>Join our growing community of expert mentors and help shape the future of online learning.</p>
+          </div>
+          
+          <div class="message">
+            <p>As a Skillyug mentor, you'll be able to:</p>
+            <ul class="features">
+              <li>Create and publish courses in your area of expertise</li>
+              <li>Engage with motivated learners from around the world</li>
+              <li>Build your personal brand and professional network</li>
+              <li>Earn from your course sales</li>
+            </ul>
+            
+            <div style="text-align: center;">
+              <a href="${inviteLink}" class="button">Complete Your Profile</a>
+            </div>
+            
+            <p>If the button doesn't work, copy and paste this link into your browser:</p>
+            <p style="word-break: break-all; color: #2563eb; font-size: 14px;">${inviteLink}</p>
+            
+            <p class="warning">This invitation will expire in 48 hours.</p>
+          </div>
+          
+          <div class="footer">
+            <p>If you weren't expecting this invitation, you can safely ignore this email.</p>
             <p>&copy; 2024 Skillyug. All rights reserved.</p>
           </div>
         </div>

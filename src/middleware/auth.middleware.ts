@@ -40,9 +40,11 @@ export const protect = asyncHandler(async (req: AuthenticatedRequest, res: Respo
       throw new AuthenticationError('Invalid token');
     }
 
+    // Only check if user exists and is verified (reduced query)
     const user = await userRepository.findById(payload.id);
-    if (!user) throw new AuthenticationError('User not found');
-    if (!user.isVerified) throw new AuthenticationError('Account not verified');
+    if (!user || !user.isVerified) {
+      throw new AuthenticationError(user ? 'Account not verified' : 'User not found');
+    }
     
     req.user = payload;
     next();

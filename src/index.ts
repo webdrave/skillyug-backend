@@ -11,6 +11,7 @@ import paymentRouter from "./router/payment.router"
 import purchaseRouter from "./router/purchase.router"
 import userRouter from "./router/userRouter"
 import recommendationRouter from "./router/recommendation.router"
+import mentorRouter from "./router/mentor.router"
 import { globalErrorHandler } from "./middleware/errorHandler.middleware"
 
 dotenv.config()
@@ -114,6 +115,7 @@ app.use("/api/payments", paymentRouter);
 app.use("/api/purchases", purchaseRouter);
 app.use("/api/users", userRouter);
 app.use("/api/recommendations", recommendationRouter);
+app.use("/api/mentor", mentorRouter);
 
 // 404 Handler
 app.use((req: Request, res: Response, _next: NextFunction) => {

@@ -187,6 +187,43 @@ export const userIdSchema = z.object({
 });
 
 // Type exports for TypeScript
+// Mentor invitation schemas
+export const inviteMentorSchema = z.object({
+  email: emailSchema,
+}).strict();
+
+export const verifyInviteSchema = z.object({
+  token: z.string().min(1, 'Token is required'),
+});
+
+export const mentorSetupSchema = z.object({
+  token: z.string().min(1, 'Token is required'),
+  fullName: z.string()
+    .min(2, 'Full name must be at least 2 characters')
+    .max(100, 'Full name must be less than 100 characters'),
+  password: passwordSchema,
+  expertise: z.array(z.string()).min(1, 'At least one area of expertise is required'),
+  experience: z.number().int().min(0).max(50).optional(),
+  linkedin: z.string().url('Invalid LinkedIn URL').optional().or(z.literal('')),
+  twitter: z.string().url('Invalid Twitter URL').optional().or(z.literal('')),
+  website: z.string().url('Invalid website URL').optional().or(z.literal('')),
+  tagline: z.string().max(200, 'Tagline must be less than 200 characters').optional(),
+  description: z.string().max(2000, 'Description must be less than 2000 characters').optional(),
+  bio: z.string().max(500, 'Bio must be less than 500 characters').optional(),
+  image: z.string().url('Invalid image URL').optional().or(z.literal('')),
+}).strict();
+
+export const updateMentorProfileSchema = z.object({
+  expertise: z.array(z.string()).optional(),
+  experience: z.number().int().min(0).max(50).optional(),
+  linkedin: z.string().url('Invalid LinkedIn URL').optional().or(z.literal('')),
+  twitter: z.string().url('Invalid Twitter URL').optional().or(z.literal('')),
+  website: z.string().url('Invalid website URL').optional().or(z.literal('')),
+  tagline: z.string().max(200, 'Tagline must be less than 200 characters').optional(),
+  description: z.string().max(2000, 'Description must be less than 2000 characters').optional(),
+}).strict();
+
+// Type exports
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type EmailLoginInput = z.infer<typeof emailLoginSchema>;
@@ -201,3 +238,7 @@ export type CheckoutInput = z.infer<typeof checkoutSchema>;
 export type PaymentVerificationInput = z.infer<typeof paymentVerificationSchema>;
 export type SavePurchaseInput = z.infer<typeof savePurchaseSchema>;
 export type PaginationInput = z.infer<typeof paginationSchema>;
+export type InviteMentorInput = z.infer<typeof inviteMentorSchema>;
+export type VerifyInviteInput = z.infer<typeof verifyInviteSchema>;
+export type MentorSetupInput = z.infer<typeof mentorSetupSchema>;
+export type UpdateMentorProfileInput = z.infer<typeof updateMentorProfileSchema>;

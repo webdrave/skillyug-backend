@@ -2,6 +2,7 @@ import { purchaseRepository } from '../repositories/purchase.repository';
 import { courseRepository } from '../repositories/course.repository';
 import { userRepository } from '../repositories/user.repository';
 import { emailService } from './email.service';
+import prisma from '../utils/prisma';
 import {
   NotFoundError,
   ValidationError,
@@ -354,6 +355,109 @@ export class PurchaseService {
     // 4. Grant access to all courses in bundle
 
     throw new BusinessLogicError('Bundle purchases not yet implemented');
+  }
+
+  /**
+   * Enroll in a free course (price = 0)
+   */
+  async enrollInFreeCourse(userId: string, courseId: string) {
+    // Validate inputs
+    if (!userId || !courseId) {
+      throw new ValidationError('User ID and Course ID are required');
+    }
+
+    // Verify user exists
+    const user = await userRepository.findById(userId);
+    if (!user) {
+      throw new NotFoundError('User');
+    }
+
+    // Verify course exists
+    const course = await courseRepository.findById(courseId);
+    if (!course) {
+      throw new NotFoundError('Course');
+    }
+
+    // Verify course is free
+    if (Number(course.price) !== 0) {
+      throw new BusinessLogicError('This course requires payment. Please use the payment flow.');
+    }
+
+    // Verify course is active
+    if (!course.isActive) {
+      throw new BusinessLogicError('This course is currently not available');
+    }
+
+    // Check if user is already enrolled
+    const existingEnrollment = await prisma.enrollment.findUnique({
+      where: {
+        userId_courseId: {
+          userId,
+          courseId
+        }
+      }
+    });
+
+    if (existingEnrollment) {
+      throw new DuplicateError('Enrollment - You are already enrolled in this course');
+    }
+
+    try {
+      // Create enrollment
+      const enrollment = await prisma.enrollment.create({
+        data: {
+          userId,
+          courseId,
+          status: 'ACTIVE',
+          progressPercent: 0,
+          enrolledAt: new Date(),
+          lastAccessedAt: new Date()
+        },
+        include: {
+          course: {
+            select: {
+              id: true,
+              courseName: true,
+              imageUrl: true,
+              category: true,
+              difficulty: true
+            }
+          }
+        }
+      });
+
+      // Send enrollment confirmation email
+      if (user.email) {
+        try {
+          await emailService.sendPurchaseConfirmation(
+            user.email,
+            course.courseName,
+            0,
+            'FREE-ENROLLMENT'
+          );
+        } catch (emailError) {
+          console.error('Failed to send enrollment confirmation:', emailError);
+          // Don't fail the enrollment if email fails
+        }
+      }
+
+      return {
+        success: true,
+        enrollment,
+        course: {
+          id: course.id,
+          name: course.courseName,
+          imageUrl: course.imageUrl
+        },
+        message: 'Successfully enrolled in free course'
+      };
+    } catch (error) {
+      console.error('Failed to create enrollment:', error);
+      if (error instanceof Error) {
+        throw new BusinessLogicError(`Failed to enroll in course: ${error.message}`);
+      }
+      throw new BusinessLogicError('Failed to enroll in course');
+    }
   }
 }
 

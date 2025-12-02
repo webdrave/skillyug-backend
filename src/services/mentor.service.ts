@@ -317,6 +317,140 @@ export class MentorService {
 
     return { message: 'Invitation cancelled successfully' };
   }
+
+  /**
+   * Decommission mentor (admin only) - Changes user type to STUDENT
+   */
+  async decommissionMentor(adminId: string, mentorUserId: string): Promise<{ message: string }> {
+    // Verify admin
+    const admin = await userRepository.findById(adminId);
+    if (!admin || admin.userType !== UserType.ADMIN) {
+      throw new AuthorizationError('Only admins can decommission mentors');
+    }
+
+    // Verify mentor exists
+    const mentor = await userRepository.findById(mentorUserId);
+    if (!mentor) {
+      throw new NotFoundError('Mentor user');
+    }
+
+    if (mentor.userType !== UserType.MENTOR) {
+      throw new BusinessLogicError('User is not a mentor');
+    }
+
+    // Check if mentor has active courses
+    const mentorProfile = await mentorRepository.getMentorProfileByUserId(mentorUserId);
+    if (mentorProfile) {
+      // We'll keep the profile but change user type to deactivate mentor status
+      // Courses remain associated but mentor can't access mentor features
+    }
+
+    // Change user type to STUDENT (decommissioned)
+    await userRepository.updateById(mentorUserId, {
+      userType: UserType.STUDENT,
+    });
+
+    return { message: 'Mentor decommissioned successfully. User type changed to STUDENT.' };
+  }
+
+  /**
+   * Delete mentor completely (admin only)
+   * WARNING: This will remove the mentor and reassign their courses to admin
+   */
+  async deleteMentor(
+    adminId: string,
+    mentorUserId: string,
+    reassignToUserId?: string
+  ): Promise<{ message: string }> {
+    // Verify admin
+    const admin = await userRepository.findById(adminId);
+    if (!admin || admin.userType !== UserType.ADMIN) {
+      throw new AuthorizationError('Only admins can delete mentors');
+    }
+
+    // Verify mentor exists
+    const mentor = await userRepository.findById(mentorUserId);
+    if (!mentor) {
+      throw new NotFoundError('Mentor user');
+    }
+
+    // Verify reassignment user if provided
+    if (reassignToUserId) {
+      const reassignUser = await userRepository.findById(reassignToUserId);
+      if (!reassignUser) {
+        throw new NotFoundError('Reassignment user not found');
+      }
+      if (reassignUser.userType !== UserType.MENTOR && reassignUser.userType !== UserType.ADMIN) {
+        throw new ValidationError('Reassignment user must be a MENTOR or ADMIN');
+      }
+    }
+
+    // Get mentor's courses count for validation
+    const mentorProfile = await mentorRepository.getMentorProfileByUserId(mentorUserId);
+    
+    // Reassign courses if mentor has any
+    // This is handled at the database level with onDelete: Cascade or SetNull
+    // But we should explicitly reassign to avoid data loss
+    const targetUserId = reassignToUserId || adminId;
+    await mentorRepository.reassignMentorCourses(mentorUserId, targetUserId);
+
+    // Delete mentor profile if exists
+    if (mentorProfile) {
+      await mentorRepository.deleteMentorProfile(mentorUserId);
+    }
+
+    // Delete user account
+    await userRepository.deleteById(mentorUserId);
+
+    return {
+      message: `Mentor deleted successfully. Courses reassigned to ${reassignToUserId ? 'specified user' : 'admin'}.`,
+    };
+  }
+
+  /**
+   * Get mentor's assigned courses
+   */
+  async getMentorCourses(userId: string): Promise<{
+    courses: Array<{
+      id: string;
+      courseName: string;
+      description: string | null;
+      imageUrl: string;
+      category: string;
+      difficulty: string;
+      isActive: boolean;
+      enrollmentCount: number;
+      scheduledSessions: Array<{
+        id: string;
+        title: string;
+        scheduledAt: Date;
+        status: string;
+        duration: number;
+      }>;
+    }>;
+  }> {
+    const courses = await mentorRepository.getMentorCourses(userId);
+    
+    return {
+      courses: courses.map(course => ({
+        id: course.id,
+        courseName: course.courseName,
+        description: course.description,
+        imageUrl: course.imageUrl,
+        category: course.category,
+        difficulty: course.difficulty,
+        isActive: course.isActive,
+        enrollmentCount: course.enrollments?.length || 0,
+        scheduledSessions: course.scheduledSessions?.map(session => ({
+          id: session.id,
+          title: session.title,
+          scheduledAt: session.scheduledAt,
+          status: session.status,
+          duration: session.duration,
+        })) || [],
+      })),
+    };
+  }
 }
 
 // Export singleton instance

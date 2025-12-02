@@ -1,4 +1,5 @@
 import express, { Request, Response, NextFunction, urlencoded } from "express"
+import { createServer } from "http"
 import dotenv from "dotenv"
 import Razorpay from "razorpay"
 import cors from "cors"
@@ -12,7 +13,13 @@ import purchaseRouter from "./router/purchase.router"
 import userRouter from "./router/userRouter"
 import recommendationRouter from "./router/recommendation.router"
 import mentorRouter from "./router/mentor.router"
+import streamingRouter from "./router/streaming.router"
+import sessionRouter from "./router/session.router"
+import quizRouter from "./router/quiz.router"
+import enrollmentRouter from "./router/enrollment.router"
+import studentRouter from "./router/student.router"
 import { globalErrorHandler } from "./middleware/errorHandler.middleware"
+import { initializeSocketServer } from "./socket/streaming.socket"
 
 dotenv.config()
 
@@ -42,6 +49,7 @@ export const instance = new Razorpay({
 
 // Express App
 const app = express();
+const httpServer = createServer(app);
 const PORT = process.env.PORT || 5000;
 app.set('trust proxy', 1);
 
@@ -83,7 +91,7 @@ app.use(cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'X-User-ID', 'X-User-Type'],
   maxAge: 86400, // 24 hours
 }));
 
@@ -116,6 +124,11 @@ app.use("/api/purchases", purchaseRouter);
 app.use("/api/users", userRouter);
 app.use("/api/recommendations", recommendationRouter);
 app.use("/api/mentor", mentorRouter);
+app.use("/api/streams", streamingRouter);
+app.use("/api/sessions", sessionRouter);
+app.use("/api/quizzes", quizRouter);
+app.use("/api/enrollments", enrollmentRouter);
+app.use("/api/student", studentRouter);
 
 // 404 Handler
 app.use((req: Request, res: Response, _next: NextFunction) => {
@@ -128,11 +141,15 @@ app.use((req: Request, res: Response, _next: NextFunction) => {
 // Global Error Handler
 app.use(globalErrorHandler);
 
+// Initialize Socket.IO
+initializeSocketServer(httpServer);
+
 // Start Server
-const server = app.listen(PORT, () => {
+const server = httpServer.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
     console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
     console.log(`🔒 CORS enabled for: ${allowedOrigins.join(', ')}`);
+    console.log(`🔌 Socket.IO initialized`);
 });
 
 // Graceful Shutdown

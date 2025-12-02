@@ -176,6 +176,64 @@ export class MentorController {
       next(error);
     }
   }
+
+  /**
+   * Decommission mentor (admin only)
+   * PATCH /admin/mentors/:userId/decommission
+   */
+  async decommissionMentor(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      if (!req.user?.id) {
+        return ResponseUtil.unauthorized(res, 'Authentication required');
+      }
+
+      const { userId } = req.params;
+      const result = await mentorService.decommissionMentor(req.user.id, userId);
+      
+      ResponseUtil.success(res, result, result.message);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Delete mentor (admin only)
+   * DELETE /admin/mentors/:userId
+   */
+  async deleteMentor(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      if (!req.user?.id) {
+        return ResponseUtil.unauthorized(res, 'Authentication required');
+      }
+
+      const { userId } = req.params;
+      const { reassignToUserId } = req.body;
+      
+      const result = await mentorService.deleteMentor(req.user.id, userId, reassignToUserId);
+      
+      ResponseUtil.success(res, result, result.message);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Get mentor's assigned courses
+   * GET /my-courses
+   */
+  async getMyCourses(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      if (!req.user?.id) {
+        return ResponseUtil.unauthorized(res, 'Authentication required');
+      }
+
+      const result = await mentorService.getMentorCourses(req.user.id);
+      
+      ResponseUtil.success(res, result, 'Courses retrieved successfully');
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 export const mentorController = new MentorController();

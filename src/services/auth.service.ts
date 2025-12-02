@@ -101,6 +101,21 @@ export class AuthService {
     if (!isValid) throw new ValidationError('Incorrect OTP');
 
     await userRepository.verifyEmail(email);
+    
+    // Auto-create MentorProfile for MENTOR users
+    if (user.userType === UserType.MENTOR) {
+      const { MentorRepository } = await import('../repositories/mentor.repository');
+      const mentorRepo = new MentorRepository();
+      const existingProfile = await mentorRepo.getMentorProfileByUserId(user.id);
+      if (!existingProfile) {
+        await mentorRepo.createMentorProfile({
+          user: { connect: { id: user.id } },
+          expertise: [],
+          experience: 0,
+        });
+      }
+    }
+    
     return { message: 'Email verified successfully' };
   }
 

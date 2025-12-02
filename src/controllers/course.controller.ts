@@ -185,6 +185,7 @@ export class CourseController {
         isActive: updateData.isActive,
         isFeatured: updateData.isFeatured,
         learningPathId: updateData.learningPathId,
+        mentorId: updateData.mentorId,
       });
       
       ResponseUtil.success(res, { course }, 'Course updated successfully');

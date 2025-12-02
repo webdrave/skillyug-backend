@@ -135,7 +135,12 @@ export const createCourseSchema = z.object({
 }).strict();
 
 // Update schema - allows partial updates and strips unknown fields
-export const updateCourseSchema = createCourseSchema.partial().strip();
+export const updateCourseSchema = createCourseSchema.partial().extend({
+  mentorId: z.string()
+    .min(1, 'Mentor ID is required')
+    .max(100, 'Mentor ID is too long')
+    .optional(),
+}).strip();
 
 export const courseIdSchema = z.object({
   id: z.string()

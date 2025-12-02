@@ -138,6 +138,7 @@ export class CourseService {
       isActive?: boolean;
       isFeatured?: boolean;
       learningPathId?: string;
+      mentorId?: string;
     }
   ) {
     // Check if course exists
@@ -147,10 +148,31 @@ export class CourseService {
     }
 
     // Verify mentor owns the course or is admin
-    if (existingCourse.mentorId !== mentorId) {
-      const mentor = await userRepository.findById(mentorId);
-      if (!mentor || mentor.userType !== 'ADMIN') {
-        throw new AuthorizationError('You can only update your own courses');
+    const requestingUser = await userRepository.findById(mentorId);
+    if (!requestingUser) {
+      throw new NotFoundError('User not found');
+    }
+
+    const isAdmin = requestingUser.userType === 'ADMIN';
+    const isOwner = existingCourse.mentorId === mentorId;
+
+    if (!isAdmin && !isOwner) {
+      throw new AuthorizationError('You can only update your own courses');
+    }
+
+    // If updating mentorId, verify the new mentor exists and is valid (admin only)
+    if (updateData.mentorId) {
+      if (!isAdmin) {
+        throw new AuthorizationError('Only admins can reassign course mentors');
+      }
+
+      const newMentor = await userRepository.findById(updateData.mentorId);
+      if (!newMentor) {
+        throw new NotFoundError('New mentor not found');
+      }
+
+      if (newMentor.userType !== 'MENTOR' && newMentor.userType !== 'ADMIN') {
+        throw new ValidationError('New mentor must have MENTOR or ADMIN user type');
       }
     }
 
@@ -163,8 +185,19 @@ export class CourseService {
       throw new ValidationError('Course duration cannot be negative');
     }
 
+    // Prepare update data for Prisma
+    const prismaUpdateData: any = { ...updateData };
+    
+    // If mentorId is being updated, use connect syntax for Prisma relation
+    if (updateData.mentorId) {
+      prismaUpdateData.mentor = {
+        connect: { id: updateData.mentorId }
+      };
+      delete prismaUpdateData.mentorId;
+    }
+
     // Update course
-    const updatedCourse = await courseRepository.updateById(courseId, updateData);
+    const updatedCourse = await courseRepository.updateById(courseId, prismaUpdateData);
     return updatedCourse;
   }
 

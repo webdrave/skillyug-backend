@@ -235,6 +235,31 @@ export class PurchaseController {
       next(error);
     }
   }
+
+  /**
+   * Enroll in a free course (price = 0)
+   * POST /api/purchases/enroll-free
+   */
+  async enrollInFreeCourse(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const { courseId } = req.body;
+      const userId = req.user?.id;
+
+      if (!userId) {
+        return ResponseUtil.unauthorized(res, 'User not authenticated');
+      }
+
+      if (!courseId) {
+        return ResponseUtil.fail(res, 'courseId is required');
+      }
+      
+      const result = await purchaseService.enrollInFreeCourse(userId, courseId);
+      
+      ResponseUtil.created(res, result, 'Successfully enrolled in free course');
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 // Export singleton instance

@@ -9,6 +9,7 @@ purchaseRouter.use(protect);
 
 // User purchase routes
 purchaseRouter.post('/', purchaseController.savePurchase.bind(purchaseController));
+purchaseRouter.post('/enroll-free', purchaseController.enrollInFreeCourse.bind(purchaseController));
 purchaseRouter.get('/my-purchases', purchaseController.getUserPurchases.bind(purchaseController));
 purchaseRouter.get('/my-courses', purchaseController.getUserPurchasedCourses.bind(purchaseController));
 purchaseRouter.get('/stats', purchaseController.getUserPurchaseStats.bind(purchaseController));

@@ -7,6 +7,17 @@ declare global {
 
 const prisma = globalThis.prisma || new PrismaClient({
   log: ['query', 'info', 'warn', 'error'],
+  datasources: {
+    db: {
+      url: process.env.DATABASE_URL,
+    },
+  },
+});
+
+// Handle graceful shutdown
+process.on('beforeExit', async () => {
+  console.log('🔌 Prisma disconnecting...');
+  await prisma.$disconnect();
 });
 
 if (process.env.NODE_ENV !== 'production') {

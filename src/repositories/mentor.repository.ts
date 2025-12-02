@@ -314,6 +314,49 @@ export class MentorRepository {
       throw new DatabaseError('Failed to delete mentor profile', error);
     }
   }
+
+  /**
+   * Reassign all courses from one mentor to another
+   */
+  async reassignMentorCourses(fromMentorId: string, toMentorId: string): Promise<{ count: number }> {
+    try {
+      const result = await prisma.course.updateMany({
+        where: { mentorId: fromMentorId },
+        data: { mentorId: toMentorId },
+      });
+      return { count: result.count };
+    } catch (error) {
+      throw new DatabaseError('Failed to reassign mentor courses', error);
+    }
+  }
+
+  /**
+   * Get courses assigned to a mentor
+   */
+  async getMentorCourses(userId: string) {
+    try {
+      return await prisma.course.findMany({
+        where: { mentorId: userId },
+        include: {
+          enrollments: true,
+          scheduledSessions: {
+            orderBy: { scheduledAt: 'desc' },
+            take: 10,
+            select: {
+              id: true,
+              title: true,
+              scheduledAt: true,
+              status: true,
+              duration: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+    } catch (error) {
+      throw new DatabaseError('Failed to fetch mentor courses', error);
+    }
+  }
 }
 
 // Export singleton instance

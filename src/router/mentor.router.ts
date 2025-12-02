@@ -122,4 +122,37 @@ mentorRouter.delete(
   (req, res, next) => mentorController.cancelInvitation(req, res, next)
 );
 
+/**
+ * Decommission mentor (admin only)
+ * PATCH /admin/mentors/:userId/decommission
+ */
+mentorRouter.patch(
+  '/admin/mentors/:userId/decommission',
+  protect,
+  restrictTo(UserType.ADMIN),
+  (req, res, next) => mentorController.decommissionMentor(req, res, next)
+);
+
+/**
+ * Delete mentor (admin only)
+ * DELETE /admin/mentors/:userId
+ */
+mentorRouter.delete(
+  '/admin/mentors/:userId',
+  protect,
+  restrictTo(UserType.ADMIN),
+  (req, res, next) => mentorController.deleteMentor(req, res, next)
+);
+
+/**
+ * Get mentor's assigned courses
+ * GET /my-courses
+ */
+mentorRouter.get(
+  '/my-courses',
+  protect,
+  restrictTo(UserType.MENTOR, UserType.ADMIN),
+  (req, res, next) => mentorController.getMyCourses(req, res, next)
+);
+
 export default mentorRouter;

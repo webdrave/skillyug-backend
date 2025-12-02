@@ -51,6 +51,9 @@ model User {
   posts           DiscussionPost[]
   certificates    Certificate[]
   notifications   Notification[]
+  streamViews     StreamViewer[]
+  quizResponses   QuizResponse[]
+  sessionAttendance SessionAttendance[]
   
   // Mentor relations
   mentorProfile        MentorProfile?
@@ -102,9 +105,114 @@ model MentorProfile {
   updatedAt   DateTime @updatedAt @map("updated_at")
 
   // Relations
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  liveStreams       LiveStream[]
+  scheduledSessions ScheduledSession[]
 
   @@map("mentor_profiles")
+}
+
+// ========================================
+// LIVE STREAMING (AWS IVS) - Enterprise Architecture
+// ========================================
+
+// IVS Channel Pool (Admin-managed, reusable)
+model IVSChannel {
+  id              String    @id @default(cuid())
+  channelArn      String    @unique @map("channel_arn")
+  channelId       String    @unique @map("channel_id")
+  channelName     String    @map("channel_name")
+  ingestEndpoint  String    @map("ingest_endpoint")
+  playbackUrl     String    @map("playback_url")
+  
+  // Channel State
+  isActive        Boolean   @default(false) @map("is_active")
+  isEnabled       Boolean   @default(true) @map("is_enabled") // Admin can disable
+  assignedToSessionId String?  @map("assigned_to_session_id")
+  
+  // Metadata
+  totalUsageHours Float     @default(0) @map("total_usage_hours")
+  lastUsedAt      DateTime? @map("last_used_at")
+  
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  sessions        ScheduledSession[]
+  
+  @@index([isActive, isEnabled])
+  @@map("ivs_channels")
+}
+
+// Session (replaces LiveStream - scheduled by mentor, auto-assigns channel)
+model LiveStream {
+  id              String           @id @default(cuid())
+  mentorProfileId String           @map("mentor_profile_id")
+  courseId        String?          @map("course_id")
+  title           String
+  description     String?          @db.Text
+  
+  // Channel Assignment (nullable until session starts)
+  channelArn      String?          @map("channel_arn")
+  channelName     String?          @map("channel_name")
+  ingestEndpoint  String?          @map("ingest_endpoint")
+  playbackUrl     String?          @map("playback_url")
+  streamKeyArn    String?          @map("stream_key_arn")
+  
+  // Stream Status
+  status          LiveStreamStatus @default(CREATED)
+  isActive        Boolean          @default(false) @map("is_active")
+  
+  // Scheduling
+  scheduledAt     DateTime?        @map("scheduled_at")
+  startedAt       DateTime?        @map("started_at")
+  endedAt         DateTime?        @map("ended_at")
+  
+  // Metadata
+  viewerCount     Int              @default(0) @map("viewer_count")
+  maxViewers      Int              @default(0) @map("max_viewers")
+  
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+
+  // Relations
+  mentorProfile    MentorProfile     @relation(fields: [mentorProfileId], references: [id], onDelete: Cascade)
+  scheduledSession ScheduledSession?
+  course          Course?          @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  viewers         StreamViewer[]
+
+  @@index([mentorProfileId])
+  @@index([courseId])
+  @@index([status])
+  @@map("live_streams")
+}
+
+model StreamViewer {
+  id           String     @id @default(cuid())
+  liveStreamId String     @map("live_stream_id")
+  userId       String     @map("user_id")
+  joinedAt     DateTime   @default(now()) @map("joined_at")
+  leftAt       DateTime?  @map("left_at")
+  watchTimeMin Int        @default(0) @map("watch_time_min")
+
+  // Relations
+  liveStream   LiveStream @relation(fields: [liveStreamId], references: [id], onDelete: Cascade)
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([liveStreamId, userId])
+  @@index([liveStreamId])
+  @@index([userId])
+  @@map("stream_viewers")
+}
+
+enum LiveStreamStatus {
+  CREATED
+  SCHEDULED
+  LIVE
+  ENDED
+  CANCELLED
+
+  @@map("live_stream_status")
 }
 
 model Account {
@@ -213,9 +321,11 @@ model Course {
   reviews       Review[]
   prerequisites CoursePrerequisite[] @relation("Prerequisites")
   requiredFor   CoursePrerequisite[] @relation("RequiredFor")
-  tags          CourseTag[]
-  learningPath  LearningPath?        @relation(fields: [learningPathId], references: [id])
-  bundles       CourseBundle[]
+  tags              CourseTag[]
+  learningPath      LearningPath?        @relation(fields: [learningPathId], references: [id])
+  bundles           CourseBundle[]
+  liveStreams       LiveStream[]
+  scheduledSessions ScheduledSession[]
 
   @@index([mentorId])
   @@map("courses")
@@ -566,6 +676,163 @@ enum NotificationType {
   COURSE_COMPLETION
   NEW_LESSON
   SYSTEM_ANNOUNCEMENT
+  LIVE_SESSION_SCHEDULED
+  LIVE_SESSION_STARTING
+  QUIZ_ASSIGNED
 
   @@map("notification_type")
+}
+
+// ========================================
+// ENHANCED LIVE STREAMING & SESSIONS
+// ========================================
+
+model ScheduledSession {
+  id          String   @id @default(cuid())
+  title       String
+  description String?  @db.Text
+  
+  // Scheduling
+  scheduledAt    DateTime  @map("scheduled_at")
+  duration       Int       @default(60) // minutes
+  isRecurring    Boolean   @default(false) @map("is_recurring")
+  recurrenceRule String?   @map("recurrence_rule") // RRULE format
+  
+  // Channel Assignment (auto-assigned when session starts)
+  ivsChannelId     String?     @map("ivs_channel_id")
+  ivsChannel       IVSChannel? @relation(fields: [ivsChannelId], references: [id], onDelete: SetNull)
+  currentStreamKey String?     @db.Text @map("current_stream_key") // Temporary, for active session only
+  
+  // Streaming config
+  streamType          StreamType          @default(RTMPS) @map("stream_type")
+  useWebRTC           Boolean             @default(false) @map("use_webrtc")
+  stageArn            String?             @map("stage_arn") // IVS Real-time Stage ARN
+  participantToken    String?             @db.Text @map("participant_token") // WebRTC token
+  
+  // Features
+  enableQuiz       Boolean @default(false) @map("enable_quiz")
+  enableAttendance Boolean @default(true) @map("enable_attendance")
+  enableChat       Boolean @default(true) @map("enable_chat")
+  enableRecording  Boolean @default(false) @map("enable_recording")
+  
+  // Status
+  status    SessionStatus @default(SCHEDULED)
+  startedAt DateTime?     @map("started_at")
+  endedAt   DateTime?     @map("ended_at")
+  
+  // Recording
+  recordingUrl String? @map("recording_url")
+  recordingS3  String? @map("recording_s3")
+  thumbnailUrl String? @map("thumbnail_url")
+  
+  // Metadata
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  
+  // Relations
+  mentorProfileId String        @map("mentor_profile_id")
+  mentorProfile   MentorProfile @relation(fields: [mentorProfileId], references: [id], onDelete: Cascade)
+  
+  courseId String? @map("course_id")
+  course   Course? @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  
+  liveStreamId String?     @unique @map("live_stream_id")
+  liveStream   LiveStream? @relation(fields: [liveStreamId], references: [id], onDelete: SetNull)
+  
+  quizzes      SessionQuiz[]
+  attendance   SessionAttendance[]
+  
+  @@index([mentorProfileId])
+  @@index([courseId])
+  @@index([scheduledAt])
+  @@index([status])
+  @@index([ivsChannelId])
+  @@map("scheduled_sessions")
+}
+
+model SessionQuiz {
+  id        String   @id @default(cuid())
+  question  String   @db.Text
+  options   Json // Array of options
+  correctAnswer Int  @map("correct_answer") // Index of correct option
+  duration  Int      @default(30) // seconds
+  points    Int      @default(10)
+  
+  // Timing
+  launchedAt DateTime? @map("launched_at")
+  endsAt     DateTime? @map("ends_at")
+  
+  // Metadata
+  createdAt DateTime @default(now()) @map("created_at")
+  
+  // Relations
+  sessionId String           @map("session_id")
+  session   ScheduledSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  
+  responses QuizResponse[]
+  
+  @@index([sessionId])
+  @@map("session_quizzes")
+}
+
+model QuizResponse {
+  id           String   @id @default(cuid())
+  answer       Int
+  isCorrect    Boolean  @map("is_correct")
+  responseTime Int      @map("response_time") // milliseconds
+  points       Int      @default(0)
+  
+  createdAt DateTime @default(now()) @map("created_at")
+  
+  // Relations
+  quizId String      @map("quiz_id")
+  quiz   SessionQuiz @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([quizId, userId])
+  @@index([quizId])
+  @@index([userId])
+  @@map("quiz_responses")
+}
+
+model SessionAttendance {
+  id           String   @id @default(cuid())
+  joinedAt     DateTime @default(now()) @map("joined_at")
+  leftAt       DateTime? @map("left_at")
+  duration     Int      @default(0) // seconds
+  isPresent    Boolean  @default(true) @map("is_present")
+  
+  // Engagement metrics
+  chatMessages Int @default(0) @map("chat_messages")
+  quizScore    Int @default(0) @map("quiz_score")
+  
+  // Relations
+  sessionId String           @map("session_id")
+  session   ScheduledSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([sessionId, userId])
+  @@index([sessionId])
+  @@index([userId])
+  @@map("session_attendance")
+}
+
+enum StreamType {
+  RTMPS  // Traditional RTMPS (OBS)
+  WEBRTC // Browser-based WebRTC
+  
+  @@map("stream_type")
+}
+
+enum SessionStatus {
+  SCHEDULED
+  LIVE
+  ENDED
+  CANCELLED
+  
+  @@map("session_status")
 }

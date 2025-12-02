@@ -5,6 +5,7 @@ import {
   getMentorSessions,
   getUpcomingSessions,
   getLiveSessions,
+  getSessionCredentials,
   startSession,
   endSession,
   updateSession,
@@ -34,6 +35,7 @@ router.get('/:sessionId', getSession);
 // Mentor only routes
 router.post('/', restrictTo(UserType.MENTOR), createSession);
 router.get('/mentor/my-sessions', restrictTo(UserType.MENTOR), getMentorSessions);
+router.get('/:sessionId/credentials', restrictTo(UserType.MENTOR), getSessionCredentials);
 router.post('/:sessionId/start', restrictTo(UserType.MENTOR), startSession);
 router.post('/:sessionId/end', restrictTo(UserType.MENTOR), endSession);
 router.patch('/:sessionId', restrictTo(UserType.MENTOR), updateSession);

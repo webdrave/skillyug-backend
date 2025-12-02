@@ -22,7 +22,13 @@
     "db:push": "prisma db push",
     "create-admin-simple": "tsx scripts/create-admin-simple.ts",
     "update-nextauth-admin": "tsx scripts/update-nextauth-admin.ts",
-    "create-admin": "tsx scripts/create-admin-enterprise.ts"
+    "create-admin": "tsx scripts/create-admin-enterprise.ts",
+    "channels:init": "tsx scripts/init-channels.ts",
+    "channels:check": "tsx scripts/check-channels.ts",
+    "channels:create": "tsx scripts/init-channels.ts",
+    "channels:setup": "tsx scripts/quick-setup.ts",
+    "streaming:setup": "tsx scripts/quick-setup.ts",
+    "streaming:production": "tsx scripts/switch-to-production.ts"
   },
   "prisma": {
     "seed": "node prisma/seed.js"

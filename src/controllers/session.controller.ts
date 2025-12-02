@@ -44,7 +44,7 @@ export async function createSession(req: Request, res: Response, next: NextFunct
       userId: mentorId!,
       title,
       description,
-      courseId,
+      courseId: courseId && courseId !== 'none' && courseId.trim() !== '' ? courseId : undefined,
       scheduledAt: new Date(scheduledTime),
       duration: sessionDuration,
       streamType: streamType as StreamType,
@@ -141,6 +141,31 @@ export async function getLiveSessions(req: Request, res: Response, next: NextFun
     res.json({
       success: true,
       data: sessions,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Get streaming credentials for a session
+ * Mentor calls this to get OBS credentials before going live
+ */
+export async function getSessionCredentials(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { sessionId } = req.params;
+    const mentorId = req.user?.id;
+
+    if (!mentorId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const credentials = await sessionService.getSessionCredentials(sessionId, mentorId);
+
+    res.json({
+      success: true,
+      data: credentials,
+      message: 'Use these credentials in OBS to start streaming',
     });
   } catch (error) {
     next(error);

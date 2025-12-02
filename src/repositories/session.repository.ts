@@ -83,6 +83,7 @@ export class SessionRepository {
           },
           quizzes: true,
           liveStream: true,
+          ivsChannel: true, // Include IVS Channel for playback URL (new channel pool architecture)
         },
       });
     } catch (error) {

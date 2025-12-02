@@ -58,6 +58,10 @@ model User {
   // Mentor relations
   mentorProfile        MentorProfile?
   sentMentorInvitations MentorInvitation[] @relation("InvitedBy")
+  
+  // Mentor Channel System (ONE-CHANNEL-PER-MENTOR)
+  mentorChannel        MentorChannel?     @relation("MentorChannel")
+  classSessions        ClassSession[]     @relation("ClassSessionMentor")
 }
 
 // ========================================
@@ -142,6 +146,75 @@ model IVSChannel {
   
   @@index([isActive, isEnabled])
   @@map("ivs_channels")
+}
+
+// ========================================
+// MENTOR CHANNEL SYSTEM (ONE-CHANNEL-PER-MENTOR)
+// Each mentor gets ONE permanent IVS channel for cost optimization
+// ========================================
+
+// Mentor's permanent IVS channel (reused for all their classes)
+model MentorChannel {
+  id              String    @id @default(cuid())
+  mentorId        String    @unique @map("mentor_id") // One channel per mentor
+  
+  // AWS IVS Channel Details
+  channelArn      String    @unique @map("channel_arn")
+  streamKeyArn    String    @map("stream_key_arn")
+  streamKey       String    @db.Text @map("stream_key") // Encrypted backup
+  ingestEndpoint  String    @map("ingest_endpoint") // RTMPS server URL
+  playbackUrl     String    @map("playback_url") // HLS URL for students
+  
+  // Metadata
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  
+  // Relations
+  mentor          User      @relation("MentorChannel", fields: [mentorId], references: [id], onDelete: Cascade)
+  classSessions   ClassSession[]
+  
+  @@index([mentorId])
+  @@map("mentor_channels")
+}
+
+// Individual class/session records (tracks when mentor goes live)
+model ClassSession {
+  id              String              @id @default(cuid())
+  classId         String              @map("class_id") // Links to Course
+  mentorId        String              @map("mentor_id")
+  channelArn      String              @map("channel_arn") // AWS IVS channel ARN
+  
+  // Session Timing
+  startedAt       DateTime            @default(now()) @map("started_at")
+  endedAt         DateTime?           @map("ended_at")
+  
+  // Status
+  status          ClassSessionStatus  @default(live)
+  viewerCount     Int                 @default(0) @map("viewer_count")
+  maxViewerCount  Int                 @default(0) @map("max_viewer_count")
+  
+  // Metadata
+  createdAt       DateTime            @default(now()) @map("created_at")
+  updatedAt       DateTime            @updatedAt @map("updated_at")
+  
+  // Relations
+  mentor          User                @relation("ClassSessionMentor", fields: [mentorId], references: [id], onDelete: Cascade)
+  class           Course              @relation("ClassSessions", fields: [classId], references: [id], onDelete: Cascade)
+  mentorChannel   MentorChannel?      @relation(fields: [channelArn], references: [channelArn])
+  
+  @@index([classId])
+  @@index([mentorId])
+  @@index([status])
+  @@index([channelArn])
+  @@map("class_sessions")
+}
+
+enum ClassSessionStatus {
+  scheduled
+  live
+  ended
+  
+  @@map("class_session_status")
 }
 
 // Session (replaces LiveStream - scheduled by mentor, auto-assigns channel)
@@ -326,6 +399,7 @@ model Course {
   bundles           CourseBundle[]
   liveStreams       LiveStream[]
   scheduledSessions ScheduledSession[]
+  classSessions     ClassSession[]       @relation("ClassSessions") // Mentor Channel System
 
   @@index([mentorId])
   @@map("courses")

@@ -31,6 +31,12 @@ export class IVSService {
           secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
         },
       });
+    } else {
+      // Mock mode - initialize with dummy to satisfy TS
+      this.client = new IvsClient({
+        region: 'us-east-1',
+        credentials: { accessKeyId: 'mock', secretAccessKey: 'mock' }
+      });
     }
   }
 

@@ -50,7 +50,7 @@ export class SessionService {
       scheduledAt: data.scheduledAt,
       duration: data.duration || 60,
       mentorProfileId: mentorProfile.id,
-      courseId: data.courseId,
+      courseId: data.courseId && data.courseId.trim() !== '' ? data.courseId : undefined,
       streamType: data.streamType,
       useWebRTC: data.streamType === (StreamType.WEBRTC as any), // Type assertion since enum comparison
       stageArn,
@@ -67,7 +67,55 @@ export class SessionService {
   }
 
   /**
+   * Get streaming credentials for a scheduled session
+   * Called by mentor to get OBS credentials before going live
+   */
+  async getSessionCredentials(
+    sessionId: string,
+    userId: string
+  ): Promise<{
+    streamKey: string;
+    ingestEndpoint: string;
+    streamUrl: string;
+    playbackUrl: string;
+    channelArn: string;
+  }> {
+    const session = await sessionRepository.findById(sessionId);
+    if (!session) {
+      throw new NotFoundError('Session not found');
+    }
+
+    const sessionWithProfile = session as typeof session & {
+      mentorProfile: { userId: string; user?: { fullName?: string; email: string } };
+    };
+
+    if (sessionWithProfile.mentorProfile.userId !== userId) {
+      throw new AuthorizationError('Only the session owner can access credentials');
+    }
+
+    // Import mentor channel service
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { mentorChannelService } = require('./mentorChannel.service');
+    
+    // Get or create mentor's permanent channel
+    const mentorUser = sessionWithProfile.mentorProfile.user;
+    const credentials = await mentorChannelService.getOrCreateMentorChannel(
+      userId,
+      mentorUser?.fullName || mentorUser?.email || 'Mentor'
+    );
+
+    return {
+      streamKey: credentials.streamKey,
+      ingestEndpoint: credentials.ingestEndpoint,
+      streamUrl: `rtmps://${credentials.ingestEndpoint}:443/app/`,
+      playbackUrl: credentials.playbackUrl,
+      channelArn: credentials.channelArn,
+    };
+  }
+
+  /**
    * Start a session
+   * Verifies mentor's stream is live and marks session as active
    */
   async startSession(
     sessionId: string,
@@ -111,49 +159,40 @@ export class SessionService {
       throw new BusinessLogicError(
         'WebRTC streaming not supported. Use RTMPS with OBS Studio instead.'
       );
-      // TODO: Enable when AWS SDK adds IVS Stages support
-      // const token = await ivsStageService.createParticipantToken({
-      //   stageArn: session.stageArn,
-      //   userId,
-      //   capabilities: ['PUBLISH', 'SUBSCRIBE'],
-      //   durationMinutes: session.duration + 60,
-      // });
-      // credentials.participantToken = token.token;
-      // credentials.stageArn = session.stageArn;
     }
-    // Handle RTMPS sessions
+    // Handle RTMPS sessions with Mentor Channel System
     else if (sessionWithProfile.streamType === StreamType.RTMPS) {
-      // Create IVS channel if not exists
-      if (!sessionWithProfile.liveStreamId) {
-        const mentorUser = sessionWithProfile.mentorProfile.user;
-        
-        const ivsChannel = await ivsService.createChannel({
-          mentorId: userId,
-          mentorName: mentorUser?.fullName || mentorUser?.email || 'Mentor',
-        });
+      // Import mentor channel service
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { mentorChannelService } = require('./mentorChannel.service');
+      
+      // Verify stream is live before starting session
+      const streamStatus = await mentorChannelService.checkStreamStatus(userId);
+      
+      if (!streamStatus.isLive) {
+        throw new BusinessLogicError(
+          'Your stream is not live. Please start OBS and begin streaming before starting the session.'
+        );
+      }
 
-        // Create live stream record
-        const liveStream = await liveStreamRepository.create({
-          mentorProfileId: sessionWithProfile.mentorProfileId,
-          courseId: sessionWithProfile.courseId || undefined,
-          title: sessionWithProfile.title,
-          description: sessionWithProfile.description || '',
-          channelArn: ivsChannel.channelArn,
-          channelName: ivsChannel.channelName,
-          ingestEndpoint: ivsChannel.ingestEndpoint,
-          playbackUrl: ivsChannel.playbackUrl,
-          streamKeyArn: ivsChannel.streamKeyArn,
-          scheduledAt: sessionWithProfile.scheduledAt,
-        });
+      // Get mentor's channel credentials
+      const mentorUser = sessionWithProfile.mentorProfile.user;
+      const channelCredentials = await mentorChannelService.getOrCreateMentorChannel(
+        userId,
+        mentorUser?.fullName || mentorUser?.email || 'Mentor'
+      );
 
-        // Link session to live stream
-        await sessionRepository.update(sessionId, {
-          liveStreamId: liveStream.id,
-        });
+      credentials.streamKey = channelCredentials.streamKey;
+      credentials.ingestEndpoint = channelCredentials.ingestEndpoint;
+      credentials.playbackUrl = channelCredentials.playbackUrl;
 
-        credentials.streamKey = ivsChannel.streamKey;
-        credentials.ingestEndpoint = ivsChannel.ingestEndpoint;
-        credentials.playbackUrl = ivsChannel.playbackUrl;
+      // Create class session record if courseId exists
+      if (sessionWithProfile.courseId) {
+        await mentorChannelService.startClassSession(
+          sessionWithProfile.courseId,
+          userId,
+          sessionWithProfile.title
+        );
       }
     }
 

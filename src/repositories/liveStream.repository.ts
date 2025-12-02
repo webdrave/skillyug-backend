@@ -92,7 +92,7 @@ export class LiveStreamRepository {
    * Find live stream by channel ARN
    */
   async findByChannelArn(channelArn: string) {
-    return prisma.liveStream.findUnique({
+    return prisma.liveStream.findFirst({
       where: { channelArn },
       include: {
         mentorProfile: {

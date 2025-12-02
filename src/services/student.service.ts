@@ -34,6 +34,12 @@ interface SessionWithRelations {
     status: string | null;
     isActive: boolean;
   } | null;
+  ivsChannel?: {
+    id: string;
+    playbackUrl: string | null;
+    isActive: boolean;
+    isEnabled: boolean;
+  } | null;
   _count?: {
     attendance: number;
   };
@@ -67,10 +73,8 @@ export class StudentService {
       mentorImage: session.mentorProfile?.user?.image,
       // Only include playback URL if session is LIVE and stream is active
       playbackUrl: 
-        session.status === SessionStatus.LIVE && 
-        session.liveStream?.isActive && 
-        session.liveStream?.playbackUrl
-          ? session.liveStream.playbackUrl
+        session.status === SessionStatus.LIVE
+          ? (session.ivsChannel?.playbackUrl || (session.liveStream?.isActive && session.liveStream?.playbackUrl ? session.liveStream.playbackUrl : null))
           : null,
       attendanceCount: session._count?.attendance || 0,
       enableQuiz: session.enableQuiz,
@@ -119,13 +123,15 @@ export class StudentService {
       };
     }
 
-    // Check if live stream exists and is active
-    if (!session.liveStream || !session.liveStream.isActive) {
+    // Check if live stream exists and is active (support both old and new flows)
+    let playbackUrl = '';
+    
+    if (session.ivsChannel?.playbackUrl) {
+      playbackUrl = session.ivsChannel.playbackUrl;
+    } else if (session.liveStream?.isActive && session.liveStream?.playbackUrl) {
+      playbackUrl = session.liveStream.playbackUrl;
+    } else {
       throw new BadRequestError('Live stream is not available. The mentor may not have started streaming yet.');
-    }
-
-    if (!session.liveStream.playbackUrl) {
-      throw new BadRequestError('Stream playback URL is not available');
     }
 
     // Return session details with playback URL
@@ -146,7 +152,7 @@ export class StudentService {
         enableChat: session.enableChat,
         enableAttendance: session.enableAttendance,
       },
-      playbackUrl: session.liveStream.playbackUrl,
+      playbackUrl: playbackUrl,
       canJoin: true,
     };
   }

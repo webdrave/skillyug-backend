@@ -95,7 +95,10 @@ export class StreamingService {
     }
 
     // Get stream key from AWS IVS
-    const streamKeyInfo = await ivsService.getStreamKey(stream.streamKeyArn);
+    let streamKeyInfo = { value: '' };
+    if (stream.streamKeyArn) {
+      streamKeyInfo = await ivsService.getStreamKey(stream.streamKeyArn);
+    }
 
     return {
       stream,
@@ -176,8 +179,10 @@ export class StreamingService {
       throw new AuthorizationError('Only the stream owner can end it');
     }
 
-    // Stop the stream in AWS IVS
-    await ivsService.stopStream(stream.channelArn);
+    if (stream.channelArn) {
+      // Stop the stream in AWS IVS
+      await ivsService.stopStream(stream.channelArn);
+    }
 
     // Update database
     const updatedStream = await liveStreamRepository.update(streamId, {
@@ -207,8 +212,10 @@ export class StreamingService {
       throw new AuthorizationError('Only the stream owner can delete it');
     }
 
-    // Delete from AWS IVS
-    await ivsService.deleteChannel(stream.channelArn);
+    if (stream.channelArn) {
+      // Delete from AWS IVS
+      await ivsService.deleteChannel(stream.channelArn);
+    }
 
     // Delete from database
     await liveStreamRepository.delete(streamId);
@@ -306,7 +313,7 @@ export class StreamingService {
 
     return {
       message: 'Joined stream successfully',
-      playbackUrl: stream.playbackUrl,
+      playbackUrl: stream.playbackUrl || '',
       viewer,
     };
   }

@@ -104,7 +104,9 @@ export class AuthService {
     
     // Auto-create MentorProfile for MENTOR users
     if (user.userType === UserType.MENTOR) {
-      const { MentorRepository } = await import('../repositories/mentor.repository');
+      // Dynamic import to avoid circular dependency
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { MentorRepository } = require('../repositories/mentor.repository');
       const mentorRepo = new MentorRepository();
       const existingProfile = await mentorRepo.getMentorProfileByUserId(user.id);
       if (!existingProfile) {

@@ -123,7 +123,8 @@ const handlePrismaError = (
       ResponseUtil.error(
         res,
         'Database operation failed',
-        { code: error.code, details: error.message }
+        500,
+        { code: error.code, details: (error as any).message }
       );
   }
 };
@@ -172,6 +173,7 @@ const handleUnknownError = (error: Error, res: Response): void => {
   ResponseUtil.error(
     res,
     'Something went wrong',
+    500,
     isDevelopment ? { 
       name: error.name,
       message: error.message,

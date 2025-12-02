@@ -179,3 +179,31 @@ export class DatabaseError extends AppError {
     );
   }
 }
+
+/**
+ * Forbidden error class
+ */
+export class ForbiddenError extends AppError {
+  constructor(message = 'Access forbidden') {
+    super(
+      message,
+      ErrorType.AUTHORIZATION_ERROR,
+      HttpStatusCode.FORBIDDEN
+    );
+  }
+}
+
+/**
+ * Bad request error class
+ */
+export class BadRequestError extends AppError {
+  constructor(message: string, details?: Record<string, unknown> | Array<Record<string, unknown>>) {
+    super(
+      message,
+      ErrorType.VALIDATION_ERROR,
+      HttpStatusCode.BAD_REQUEST,
+      true,
+      details
+    );
+  }
+}

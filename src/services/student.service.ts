@@ -1,6 +1,43 @@
-import { ScheduledSession, SessionStatus } from '@prisma/client';
+import { SessionStatus } from '@prisma/client';
 import { sessionRepository } from '../repositories/session.repository';
 import { NotFoundError, ForbiddenError, BadRequestError } from '../utils/errors';
+
+// Type for session with relations
+interface SessionWithRelations {
+  id: string;
+  title: string;
+  description: string | null;
+  courseId: string | null;
+  scheduledAt: Date;
+  duration: number;
+  status: SessionStatus;
+  enableQuiz: boolean;
+  enableChat: boolean;
+  enableAttendance: boolean;
+  course?: {
+    id: string;
+    courseName: string;
+    imageUrl: string | null;
+    description?: string | null;
+  } | null;
+  mentorProfile?: {
+    user?: {
+      id: string;
+      fullName: string | null;
+      email: string | null;
+      image: string | null;
+    } | null;
+  } | null;
+  liveStream?: {
+    id: string;
+    playbackUrl: string | null;
+    status: string | null;
+    isActive: boolean;
+  } | null;
+  _count?: {
+    attendance: number;
+  };
+}
 
 /**
  * Student Service - Business logic for student session operations
@@ -10,13 +47,13 @@ export class StudentService {
    * Get all sessions for courses the student is enrolled in
    */
   async getEnrolledSessions(userId: string): Promise<any[]> {
-    const sessions = await sessionRepository.findByEnrolledCourses(userId, {
+    const sessions: SessionWithRelations[] = await sessionRepository.findByEnrolledCourses(userId, {
       includeUpcoming: true,
       limit: 50,
     });
 
     // Format response to match frontend expectations
-    return sessions.map((session) => ({
+    return sessions.map((session: SessionWithRelations) => ({
       id: session.id,
       title: session.title,
       description: session.description,
@@ -35,7 +72,7 @@ export class StudentService {
         session.liveStream?.playbackUrl
           ? session.liveStream.playbackUrl
           : null,
-      attendanceCount: (session as any)._count?.attendance || 0,
+      attendanceCount: session._count?.attendance || 0,
       enableQuiz: session.enableQuiz,
       enableChat: session.enableChat,
       enableAttendance: session.enableAttendance,
@@ -59,7 +96,7 @@ export class StudentService {
     }
 
     // Get the session with full details
-    const session = await sessionRepository.findById(sessionId);
+    const session = await sessionRepository.findById(sessionId) as SessionWithRelations | null;
     
     if (!session) {
       throw new NotFoundError('Session not found');

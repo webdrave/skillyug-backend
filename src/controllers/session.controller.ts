@@ -22,21 +22,36 @@ export async function createSession(req: Request, res: Response, next: NextFunct
       title,
       description,
       courseId,
+      // Support both field naming conventions
       scheduledStartTime,
+      scheduledAt,
       estimatedDuration,
+      duration,
       streamType,
       isRecorded,
+      enableRecording,
+      enableQuiz,
+      enableAttendance,
+      enableChat,
     } = req.body;
+
+    // Use scheduledAt if provided, otherwise fall back to scheduledStartTime
+    const scheduledTime = scheduledAt || scheduledStartTime;
+    const sessionDuration = duration || estimatedDuration || 60;
+    const recording = enableRecording ?? isRecorded ?? false;
 
     const session = await sessionService.createSession({
       userId: mentorId!,
       title,
       description,
       courseId,
-      scheduledAt: new Date(scheduledStartTime),
-      duration: estimatedDuration,
+      scheduledAt: new Date(scheduledTime),
+      duration: sessionDuration,
       streamType: streamType as StreamType,
-      enableRecording: isRecorded,
+      enableRecording: recording,
+      enableQuiz: enableQuiz ?? false,
+      enableAttendance: enableAttendance ?? true,
+      enableChat: enableChat ?? true,
     });
 
     res.status(201).json({

@@ -76,14 +76,14 @@ export class ResponseUtil {
    * Send error response for server errors
    * @param res Express response object
    * @param message Error message
-   * @param errors Error details
    * @param statusCode HTTP status code (default: 500)
+   * @param errors Error details
    */
   static error(
     res: Response,
     message = 'Internal server error',
-    errors?: Record<string, unknown> | string[] | Array<Record<string, unknown>>,
-    statusCode = 500
+    statusCode = 500,
+    errors?: Record<string, unknown> | string[] | Array<Record<string, unknown>>
   ): void {
     const response: ApiResponse = {
       status: 'error',

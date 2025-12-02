@@ -200,12 +200,15 @@ export class SessionRepository {
       
       return await prisma.scheduledSession.findMany({
         where: {
-          scheduledAt: {
-            gte: now,
-          },
-          status: {
-            in: [SessionStatus.SCHEDULED, SessionStatus.LIVE],
-          },
+          OR: [
+            { status: SessionStatus.LIVE },
+            {
+              status: SessionStatus.SCHEDULED,
+              scheduledAt: {
+                gte: now,
+              },
+            },
+          ],
           ...(filters?.courseId && { courseId: filters.courseId }),
         },
         include: {
@@ -287,6 +290,7 @@ export class SessionRepository {
 
   /**
    * Find sessions for courses that a student is enrolled in
+   * Also includes general sessions (no courseId) from mentors whose courses the student is enrolled in
    */
   async findByEnrolledCourses(
     userId: string,
@@ -295,46 +299,84 @@ export class SessionRepository {
       includeUpcoming?: boolean;
       limit?: number;
     }
-  ): Promise<ScheduledSession[]> {
+  ): Promise<any[]> {
     try {
       const now = new Date();
       
-      // Build status filter
-      let statusFilter: any = {};
-      if (filters?.status) {
-        statusFilter = { status: filters.status };
-      } else if (filters?.includeUpcoming) {
-        statusFilter = {
-          status: {
-            in: [SessionStatus.SCHEDULED, SessionStatus.LIVE],
-          },
-          scheduledAt: {
-            gte: now,
-          },
-        };
-      }
-
-      return await prisma.scheduledSession.findMany({
+      // First, get mentor profile IDs for mentors whose courses the student is enrolled in
+      const enrolledCourses = await prisma.enrollment.findMany({
         where: {
-          ...statusFilter,
-          OR: [
-            // Sessions for courses the student is enrolled in
-            {
-              courseId: { not: null },
-              course: {
-                enrollments: {
-                  some: {
-                    userId,
-                    status: EnrollmentStatus.ACTIVE,
+          userId,
+          status: EnrollmentStatus.ACTIVE,
+        },
+        select: {
+          course: {
+            select: {
+              mentorId: true,
+            },
+          },
+        },
+      });
+
+      // Get unique mentor IDs
+      const enrolledMentorIds = [...new Set(enrolledCourses.map(e => e.course.mentorId).filter(Boolean))] as string[];
+
+      // Get mentor profile IDs for those user IDs
+      const mentorProfiles = await prisma.mentorProfile.findMany({
+        where: {
+          userId: { in: enrolledMentorIds },
+        },
+        select: { id: true },
+      });
+      const mentorProfileIds = mentorProfiles.map(mp => mp.id);
+      
+      // Build where clause
+      const whereInput: Prisma.ScheduledSessionWhereInput = {
+        AND: [
+          {
+            OR: [
+              // Sessions for courses the student is enrolled in
+              {
+                courseId: { not: null },
+                course: {
+                  enrollments: {
+                    some: {
+                      userId,
+                      status: EnrollmentStatus.ACTIVE,
+                    },
                   },
                 },
               },
+              // General sessions (no course) from mentors whose courses the student is enrolled in
+              {
+                courseId: null,
+                mentorProfileId: { in: mentorProfileIds },
+              },
+            ],
+          }
+        ]
+      };
+
+      // Add status/time filters
+      if (filters?.status) {
+        (whereInput.AND as any[]).push({ status: filters.status });
+      } else if (filters?.includeUpcoming) {
+        // Include LIVE sessions, SCHEDULED sessions, and recently COMPLETED sessions (last 24 hours)
+        const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        (whereInput.AND as any[]).push({
+          OR: [
+            { status: SessionStatus.LIVE },
+            { status: SessionStatus.SCHEDULED },
+            {
+              status: SessionStatus.ENDED,
+              endedAt: { gte: oneDayAgo },
             },
-            // General sessions (no course assigned) - not included for now
-            // Uncomment if you want students to see all general sessions
-            // { courseId: null }
           ],
-        },
+        });
+      }
+
+      return await prisma.scheduledSession.findMany({
+        where: whereInput,
         include: {
           mentorProfile: {
             include: {
@@ -379,16 +421,18 @@ export class SessionRepository {
   }
 
   /**
-   * Check if a user has access to a session (enrolled in the course)
+   * Check if a user has access to a session (enrolled in the course or general session from enrolled mentor)
    */
   async hasUserAccess(sessionId: string, userId: string): Promise<boolean> {
     try {
-      const session = await prisma.scheduledSession.findFirst({
+      // First check direct access cases
+      const directAccess = await prisma.scheduledSession.findFirst({
         where: {
           id: sessionId,
           OR: [
             // Student enrolled in the course
             {
+              courseId: { not: null },
               course: {
                 enrollments: {
                   some: {
@@ -408,7 +452,30 @@ export class SessionRepository {
         },
       });
 
-      return session !== null;
+      if (directAccess) return true;
+
+      // Check if it's a general session from a mentor whose courses the student is enrolled in
+      const session = await prisma.scheduledSession.findUnique({
+        where: { id: sessionId },
+        include: {
+          mentorProfile: true,
+        },
+      });
+
+      if (!session || session.courseId !== null) return false;
+
+      // Check if user is enrolled in any of this mentor's courses
+      const enrollment = await prisma.enrollment.findFirst({
+        where: {
+          userId,
+          status: EnrollmentStatus.ACTIVE,
+          course: {
+            mentorId: session.mentorProfile.userId,
+          },
+        },
+      });
+
+      return enrollment !== null;
     } catch (error) {
       throw new DatabaseError('Failed to check user access', error);
     }

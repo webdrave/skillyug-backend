@@ -18,6 +18,7 @@ import sessionRouter from "./router/session.router"
 import quizRouter from "./router/quiz.router"
 import enrollmentRouter from "./router/enrollment.router"
 import studentRouter from "./router/student.router"
+import ivsSimpleRouter from "./router/ivs-simple.router"
 import { globalErrorHandler } from "./middleware/errorHandler.middleware"
 import { initializeSocketServer } from "./socket/streaming.socket"
 
@@ -129,6 +130,7 @@ app.use("/api/sessions", sessionRouter);
 app.use("/api/quizzes", quizRouter);
 app.use("/api/enrollments", enrollmentRouter);
 app.use("/api/student", studentRouter);
+app.use("/", ivsSimpleRouter);
 
 // 404 Handler
 app.use((req: Request, res: Response, _next: NextFunction) => {

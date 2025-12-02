@@ -7,7 +7,7 @@ const studentRouter = Router();
 
 // All routes require authentication as a student
 studentRouter.use(protect);
-studentRouter.use(restrictTo(UserType.STUDENT, UserType.ENTERPRISE_USER));
+studentRouter.use(restrictTo(UserType.STUDENT));
 
 /**
  * GET /api/student/sessions
